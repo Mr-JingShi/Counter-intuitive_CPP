@@ -41,7 +41,7 @@ public:
         return *this;
     }
     
-    int getValue() {
+    int getValue() const {
         return value;
     }
     
@@ -78,7 +78,7 @@ this指针是类非静态成员函数的一个隐式参数（左边第一个参�
 ## this指针占用类的存储空间吗？ 
 `this`指针只是类非静态成员函数的一个函数参数，而非类的隐藏成员变量，因此也不用担心this指针使类在内存上变大。
 
-## this指针是个左值
+## this指针是个左值，可以使用const修饰this指针
 ```
 void Test::modefyThis(int value) { this = nullptr; } // 编译失败
 ```
@@ -181,7 +181,7 @@ void fun(Test* test) {
 // 非成员函数
 void fun(const Test& test) {
     std::cout << "fun(const Test& test)\n";
-    test.setValue(300);
+    test.getValue();
 }
 
 // 成员函数
@@ -191,4 +191,110 @@ void Test::doSomeThing() {
     fun(*this);
 }
 ```
-非静态成员函数doSomeThing内部需要向外部传递类指针或类引用。注意构造函数内部需要向外部传递类指针或类引用时容易可能引发半构造问题：即成员变量还未全部初始化完成前，把this或*this传递给了外部，外部直接访问了还未完成初始化的成员变量。
+非静态成员函数`doSomeThing`内部需要向外部传递类指针或类引用。注意构造函数内部需要向外部传递类指针或类引用时容易可能引发半构造问题：即成员变量还未全部初始化完成前，把`this`或`*this`传递给了外部，外部直接访问了还未完成初始化的成员变量。
+
+### 非静态成员函数向外部（函数或变量）传递`std::shared_ptr`
+当我们熟练使用`std::shared_ptr`之后，如果想在非静态成员函数向外部（函数或变量）传递`std::shared_ptr`，不能直接使用`this`,而是使用`shared_from_this`代替`this`。
+```
+#include <iostream>
+#include <memory>
+
+class Test;
+void fun(Test* test);
+void fun(const Test& test);
+void fun(const std::shared_ptr<Test>& test);
+
+Test* gTestPtr = nullptr;
+
+class Test : public std::enable_shared_from_this<Test> {
+public:
+    Test(int value) : value(value) {
+        std::cout << "constructor\n";
+    }
+    ~Test() {
+        std::cout << "destructor\n";
+    }
+    Test(const Test& test) {
+        std::cout << "copy constructor\n";
+        value = test.value;
+    }
+    Test& operator=(const Test& test) {
+        std::cout << "copy assignment operator\n";
+        
+        if (this == &test) {
+            return *this;
+        }
+        
+        value = test.value;
+        
+        return *this;
+    }
+    
+    int getValue() const {
+        return value;
+    }
+    
+    void setValue(int value) {
+        this->value = value;
+    }
+    
+    // 成员函数
+    void doSomeThing() {
+        gTestPtr = this;
+        fun(this);
+        fun(*this);
+    }
+    
+    void doSomeOtherThing() {
+        fun(shared_from_this());
+    }
+    
+private:
+    int value;
+};
+
+// 非成员函数
+void fun(Test* test) {
+    std::cout << "fun(Test*)\n";
+    test->setValue(200);
+}
+
+// 非成员函数
+void fun(const Test& test) {
+    std::cout << "fun(const Test& test)\n";
+    std::cout << "test.getValue():" << test.getValue() << "\n";
+}
+
+// 非成员函数
+void fun(const std::shared_ptr<Test>& test) {
+    std::cout << "fun(const std::shared_ptr<Test>& test)\n";
+    std::cout << "test->getValue():" << test->getValue() << "\n";
+}
+
+int main() {
+    Test test(10);
+    std::cout << "test.value:" << test.getValue() << "\n";
+    test.setValue(100);
+    std::cout << "test.value:" << test.getValue() << "\n";
+    test.doSomeThing();
+    
+    auto test1 = std::make_shared<Test>(20);
+    test1->doSomeOtherThing();
+
+    return 0;
+}
+```
+输出：
+```
+constructor
+test.value:10
+test.value:100
+fun(Test*)
+fun(const Test& test)
+test.getValue():200
+constructor
+fun(const std::shared_ptr<Test>& test)
+test->getValue():20
+destructor
+destructor
+```
